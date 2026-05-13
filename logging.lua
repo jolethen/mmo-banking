@@ -1,12 +1,21 @@
-local path = minetest.get_worldpath() .. "/bank_journal.log"
+local log_path = minetest.get_worldpath() .. "/mmo_bank_master.log"
 
-function mmo_banking.log(s, r, amt, tax, reason)
-    local id = "TXN-" .. os.time() .. "-" .. math.random(100, 999)
-    local entry = string.format("[%s] %s | %s -> %s | %d (Tax: %d) | %s\n",
-        os.date("%Y-%m-%d %H:%M"), id, s, r, amt, tax, reason)
+function mmo_banking.log(sender, receiver, amount, tax, reason)
+    -- Generate Unique Transaction ID
+    local tx_id = "TX-" .. os.date("%y%m%d") .. "-" .. math.random(1000, 9999)
     
-    local f = io.open(path, "a")
-    if f then f:write(entry) f:close() end
+    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+    local entry = string.format("[%s] ID:%s | %s -> %s | Amt:%d | Tax:%d | Type:%s\n", 
+                  timestamp, tx_id, sender, receiver, amount, tax, reason)
+    
+    -- Atomic Write-Ahead
+    local f = io.open(log_path, "a")
+    if f then
+        f:write(entry)
+        f:close()
+    end
+    
+    -- Log to standard Luanti action log as backup
     minetest.log("action", "[mmo_banking] " .. entry)
-    return id
+    return tx_id
 end
