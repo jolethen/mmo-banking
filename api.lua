@@ -1,30 +1,39 @@
-function mmo_banking.transfer(sender_name, receiver_name, amount, reason)
-    local amount = math.floor(amount)
-    if amount < mmo_banking.config.min_trans then return false, "Invalid amount" end
-
-    local s = mmo_banking.load_account(sender_name)
-    local r = mmo_banking.load_account(receiver_name)
-
-    if s.status ~= "active" then return false, "Account is " .. s.status end
+-- Physical Deposit (mingeld -> Bank)
+function mmo_banking.deposit_physical(player_name, amount_units)
+    local player = minetest.get_player_by_name(player_name)
+    local inv = player:get_inventory()
+    local coins_needed = math.floor(amount_units / mmo_banking.config.unit_value)
     
-    local tax = math.floor(amount * mmo_banking.config.tax_rate)
-    local total = amount + tax
-
-    if s.balance < total then return false, "Insufficient funds (inc. 2% tax)" end
-    if (r.balance + amount) > mmo_banking.config.max_balance then return false, "Limit exceeded" end
-
-    -- ATOMIC SWAP
-    s.balance = s.balance - total
-    r.balance = r.balance + amount
+    if coins_needed <= 0 then return false, "Deposit must be at least 1 coin." end
     
-    -- Server Fund (Taxes)
-    local f = mmo_banking.load_account(mmo_banking.config.server_fund)
-    f.balance = f.balance + tax
+    if inv:contains_item("main", mmo_banking.config.item .. " " .. coins_needed) then
+        local acc = mmo_banking.load_account(player_name)
+        inv:remove_item("main", mmo_banking.config.item .. " " .. coins_needed)
+        acc.balance = acc.balance + (coins_needed * mmo_banking.config.unit_value)
+        mmo_banking.save_account(player_name, acc)
+        mmo_banking.log(player_name, "BANK", (coins_needed * 100), 0, "Deposit")
+        return true, "Deposited " .. coins_needed .. " gold coins."
+    end
+    return false, "You don't have enough coins."
+end
 
-    mmo_banking.log(sender_name, receiver_name, amount, tax, reason)
-    mmo_banking.save_account(sender_name, s)
-    mmo_banking.save_account(receiver_name, r)
-    mmo_banking.save_account(mmo_banking.config.server_fund, f)
+-- Physical Withdrawal (Bank -> mingeld)
+function mmo_banking.withdraw_physical(player_name, amount_units)
+    local player = minetest.get_player_by_name(player_name)
+    local inv = player:get_inventory()
+    local coins_to_give = math.floor(amount_units / mmo_banking.config.unit_value)
+    local acc = mmo_banking.load_account(player_name)
+    local total_cost = coins_to_give * mmo_banking.config.unit_value
     
-    return true
+    if coins_to_give <= 0 then return false, "Min withdrawal is 1 coin." end
+    if acc.balance < total_cost then return false, "Insufficient bank balance." end
+    
+    if inv:room_for_item("main", mmo_banking.config.item .. " " .. coins_to_give) then
+        acc.balance = acc.balance - total_cost
+        inv:add_item("main", mmo_banking.config.item .. " " .. coins_to_give)
+        mmo_banking.save_account(player_name, acc)
+        mmo_banking.log("BANK", player_name, total_cost, 0, "Withdrawal")
+        return true, "Withdrew " .. coins_to_give .. " gold coins."
+    end
+    return false, "Inventory full!"
 end
